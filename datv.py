@@ -11,12 +11,13 @@ import json
 from aiohttp import WSMsgType, web
 from collections.abc import Mapping
 from pyatv.const import Protocol
+from pyatv import pair, scan
 
 import pyatv
 
 PAGE = ""
 routes = web.RouteTableDef()
-current_pairing = None
+
 
 class CorsHeaders(Mapping):
     def __init__(self):
@@ -38,12 +39,13 @@ class CorsHeaders(Mapping):
     def __delitem__(self, key):
         del self.headers[key]
 
-# Example usage:
+
 cors_headers = CorsHeaders()
-cors_headers['Access-Control-Allow-Origin'] = '*'
-cors_headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-cors_headers['Access-Control-Allow-Headers'] = 'Content-Type'
-cors_headers['Access-Control-Max-Age'] = '3600'
+cors_headers["Access-Control-Allow-Origin"] = "*"
+cors_headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+cors_headers["Access-Control-Allow-Headers"] = "Content-Type"
+cors_headers["Access-Control-Max-Age"] = "3600"
+
 
 class DeviceListener(pyatv.interface.DeviceListener, pyatv.interface.PushListener):
     """Listener for device and push updates events."""
@@ -82,20 +84,24 @@ def web_command(method):
         device_id = request.match_info["id"]
         atv = request.app["atv"].get(device_id)
         if not atv:
-            return web.Response(text=json_error(f"Not connected to {device_id}"), status=500, content_type="application/json", headers=cors_headers)
+            return web.Response(
+                text=json_error(f"Not connected to {device_id}"),
+                status=500,
+                content_type="application/json",
+                headers=cors_headers,
+            )
         return await method(request, atv)
 
     return _handler
 
-def json_error(error:str)-> str:
-    return json.dumps({
-        "error": error
-    })
 
-def json_text(error:str)-> str:
-    return json.dumps({
-        "res": error
-    })
+def json_error(error: str) -> str:
+    return json.dumps({"error": error})
+
+
+def json_text(error: str) -> str:
+    return json.dumps({"res": error})
+
 
 def add_credentials(config, query):
     """Add credentials to pyatv device configuration."""
@@ -104,77 +110,86 @@ def add_credentials(config, query):
         if proto_name in query:
             config.set_credentials(service.protocol, query[proto_name])
 
+
 @routes.get("/devices.json")
 async def devices(request):
     """Handle request to scan for devices."""
-    results = await pyatv.scan(loop=asyncio.get_event_loop())
+    results = await scan(loop=asyncio.get_event_loop())
     devices = []
     for result in results:
-        devices.append({
-            "name": result.name,
-            "identifier": result.identifier
-        })
+        devices.append({"name": result.name, "identifier": result.identifier})
     return web.Response(
-            text=json.dumps(devices), 
-            content_type="application/json",
-            headers=cors_headers
-        )
-
-@routes.get("/state/{id}.json")
-async def state(request):
-    """Handle request to receive push updates."""
-    return web.Response(
-        text=PAGE.replace("DEVICE_ID", request.match_info["id"]),
-        content_type="application/json",
-            headers=cors_headers
+        text=json.dumps(devices), content_type="application/json", headers=cors_headers
     )
 
+
 @routes.get("/pair/{id}")
-@web_command
-async def pair(request, atv):
+async def pair_device(request):
     """Handle request to pair with a device."""
+    device_id = request.match_info["id"]
+
     try:
         loop = asyncio.get_event_loop()
-        current_pairing = pyatv.pair(atv, Protocol.RAOP, loop)
+        atvs = await scan(loop=asyncio.get_event_loop())
+        devices = [
+            foundAtv for foundAtv in atvs if foundAtv.identifier == device_id]
+
+        request.app.current_pairing = await pair(devices[0], Protocol.Companion, loop, name="Android")
+        await request.app.current_pairing.begin()
         return web.Response(
-            text=json_text(f"enter_pin"),
+            text=json_text(f"{request.app.current_pairing}"),
             content_type="application/json",
-                headers=cors_headers
+            headers=cors_headers,
         )
     except Exception as ex:
-        print(f"{ex}")
+        print(ex)
         return web.Response(
-            text=json_error(f"{ex}"),
+            text=json_error(f"Failed to start pairing because: {ex}"),
             content_type="application/json",
-                headers=cors_headers
+            status=500,
+            headers=cors_headers,
         )
+
 
 @routes.get("/pair/{id}/{pin}")
 @web_command
 async def send_pin(request, atv):
     """Handle request to pair with a device."""
-    if current_pairing is None:
+    if request.app.current_pairing is None:
         return web.Response(
-            text=json_error(f"No pairing in progress"),
+            text=json_error("No pairing in progress"),
             content_type="application/json",
-                headers=cors_headers
+            status=400,
+            headers=cors_headers,
         )
-        
+
     try:
-        current_pairing.pin(request.match_info["pin"])
-        current_pairing.finish()
-        return web.Response(
-            text=json_text(f"enter_pin"),
-            content_type="application/json",
-                headers=cors_headers
-        )
+        request.app.current_pairing.pin(request.match_info["pin"])
+        await request.app.current_pairing.finish()
+        await request.app.current_pairing.close()
+
+        if request.app.current_pairing.has_paired:
+            return web.Response(
+                text=json_text("paired"),
+                content_type="application/json",
+                headers=cors_headers,
+            )
+        else:
+            return web.Response(
+                text=json_error("failed"),
+                status=400,
+                content_type="application/json",
+                headers=cors_headers,
+            )
     except Exception as ex:
-        print(f"{ex}")
+        print(ex)
         return web.Response(
-            text=json_error(f"{ex}"),
+            text=json_error(f"Failed to pair with pin: {ex}"),
             content_type="application/json",
-                headers=cors_headers
+            status=500,
+            headers=cors_headers,
         )
+
 
 @routes.get("/connect/{id}")
 async def connect(request):
@@ -183,19 +198,20 @@ async def connect(request):
     device_id = request.match_info["id"]
     if device_id in request.app["atv"]:
         return web.Response(
-                text=json_error(f"Already connected to {device_id}"), 
-                content_type="application/json",
-            headers=cors_headers
-                )
+            text=json_error(f"Already connected to {device_id}"),
+            content_type="application/json",
+            status=200,
+            headers=cors_headers,
+        )
 
     results = await pyatv.scan(identifier=device_id, loop=loop)
     if not results:
         return web.Response(
-                text=json_error("Device not found"), 
-                status=500, 
-                content_type="application/json",
-            headers=cors_headers
-                )
+            text=json_error("Device not found"),
+            status=500,
+            content_type="application/json",
+            headers=cors_headers,
+        )
 
     add_credentials(results[0], request.query)
 
@@ -203,11 +219,11 @@ async def connect(request):
         atv = await pyatv.connect(results[0], loop=loop)
     except Exception as ex:
         return web.Response(
-                text=json_error(f"Failed to connect to device: {ex}"), 
-                status=500, 
-                content_type="application/json",
-            headers=cors_headers
-                )
+            text=json_error(f"Failed to connect to device: {ex}"),
+            status=500,
+            content_type="application/json",
+            headers=cors_headers,
+        )
 
     listener = DeviceListener(request.app, device_id)
     atv.listener = listener
@@ -217,10 +233,10 @@ async def connect(request):
 
     request.app["atv"][device_id] = atv
     return web.Response(
-            text=json_text(f"Connected to device {device_id}"),
-            content_type="application/json",
-            headers=cors_headers
-            )
+        text=json_text(f"Connected to device {device_id}"),
+        content_type="application/json",
+        headers=cors_headers,
+    )
 
 
 @routes.get("/remote_control/{id}/{command}")
@@ -228,19 +244,21 @@ async def connect(request):
 async def remote_control(request, atv):
     """Handle remote control command request."""
     try:
-        await getattr(atv.remote_control, request.match_info["command"])()
+        device_id = request.match_info["id"]
+        atvs = await scan(loop=asyncio.get_event_loop())
+        devices = [
+            foundAtv for foundAtv in atvs if foundAtv.identifier == device_id]
+        await getattr(devices[0].remote_control, request.match_info["command"])()
     except Exception as ex:
         print(f"ERR {ex}")
         return web.Response(
-        text=json_error(f"Remote control command failed: {ex}"),
+            text=json_error(f"Remote control command failed: {ex}"),
             content_type="application/json",
-            headers=cors_headers
+            headers=cors_headers,
         )
     return web.Response(
-            text=json_text("OK"), 
-            content_type="application/json",
-            headers=cors_headers
-            )
+        text=json_text("OK"), content_type="application/json", headers=cors_headers
+    )
 
 
 @routes.get("/playing/{id}")
@@ -298,6 +316,7 @@ def main():
     """Script starts here."""
     print("server starting")
     app = web.Application()
+    app.current_pairing = None
     app["pair_requests"] = {}
     app["atv"] = {}
     app["listeners"] = []
