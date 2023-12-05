@@ -22,8 +22,11 @@ class CorsHeaders(Mapping):
         del self.headers[key]
 
 
-cors_headers = CorsHeaders()
-cors_headers["Access-Control-Allow-Origin"] = "*"
-cors_headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-cors_headers["Access-Control-Allow-Headers"] = "Content-Type"
-cors_headers["Access-Control-Max-Age"] = "3600"
+def DefaultCorsHeaders():
+    cors_headers = CorsHeaders()
+    cors_headers["Access-Control-Allow-Origin"] = "*"
+    cors_headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    cors_headers["Access-Control-Allow-Headers"] = "Content-Type"
+    cors_headers["Access-Control-Max-Age"] = "3600"
+
+    return cors_headers

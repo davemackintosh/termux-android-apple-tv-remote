@@ -9,6 +9,9 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 pyatv = "^0.14.4"
+aiohttp-cors = "^0.7.0"
+aiohttp = "^3.9.1"
+asyncio = "^3.4.3"
 
 
 [build-system]

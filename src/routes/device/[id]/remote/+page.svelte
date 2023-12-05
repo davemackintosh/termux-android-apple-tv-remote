@@ -1,5 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { apiRequest } from '$lib/fetch';
+
+	const { loading: connecting } = apiRequest(`/devices/${$page.params.id}/connect`);
+	const { refetch: sendCommand } = apiRequest(`/devices/${$page.params.id}/remote_control`, {
+		fetchNow: false
+	});
+
 	enum Command {
 		UP = 'up',
 		RIGHT = 'right',
@@ -12,51 +19,79 @@
 		HOME = 'home'
 	}
 
-	$: deviceId = $page.params.id;
-
-	async function sendCommand(command: Command) {
-		await fetch(`http://localhost:8080/connect/${deviceId}`);
-		fetch(`http://localhost:8080/remote_control/${deviceId}/${command}`)
-			.then((res) => res.json())
-			.then(console.log);
-	}
 	function up() {
-		sendCommand(Command.UP);
+		sendCommand({
+			variables: {
+				command: Command.UP
+			}
+		});
 	}
 	function right() {
-		sendCommand(Command.RIGHT);
+		sendCommand({
+			variables: {
+				command: Command.RIGHT
+			}
+		});
 	}
 	function down() {
-		sendCommand(Command.DOWN);
+		sendCommand({
+			variables: {
+				command: Command.DOWN
+			}
+		});
 	}
 	function left() {
-		sendCommand(Command.LEFT);
+		sendCommand({
+			variables: {
+				command: Command.LEFT
+			}
+		});
 	}
 	function menu() {
-		sendCommand(Command.MENU);
+		sendCommand({
+			variables: {
+				command: Command.MENU
+			}
+		});
 	}
 	function select() {
-		sendCommand(Command.SELECT);
+		sendCommand({
+			variables: {
+				command: Command.SELECT
+			}
+		});
 	}
 	function play() {
-		sendCommand(Command.PLAY);
+		sendCommand({
+			variables: {
+				command: Command.PLAY
+			}
+		});
 	}
 	function pause() {
-		sendCommand(Command.PAUSE);
+		sendCommand({
+			variables: {
+				command: Command.PAUSE
+			}
+		});
 	}
 	function home() {
-		sendCommand(Command.HOME);
+		sendCommand({
+			variables: {
+				command: Command.HOME
+			}
+		});
 	}
 </script>
 
 <div class="remote">
-	<button class="up" on:click|preventDefault={up}>up</button>
-	<button class="right" on:click|preventDefault={right}>right</button>
-	<button class="down" on:click|preventDefault={down}>down</button>
-	<button class="left" on:click|preventDefault={left}>left</button>
-	<button class="home" on:click|preventDefault={home}>home</button>
-	<button class="play" on:click|preventDefault={play}>play</button>
-	<button class="pause" on:click|preventDefault={pause}>pause</button>
-	<button class="menu" on:click|preventDefault={menu}>menu</button>
-	<button class="select" on:click|preventDefault={select}>select</button>
+	<button disabled={$connecting} class="up" on:click|preventDefault={up}>up</button>
+	<button disabled={$connecting} class="right" on:click|preventDefault={right}>right</button>
+	<button disabled={$connecting} class="down" on:click|preventDefault={down}>down</button>
+	<button disabled={$connecting} class="left" on:click|preventDefault={left}>left</button>
+	<button disabled={$connecting} class="home" on:click|preventDefault={home}>home</button>
+	<button disabled={$connecting} class="play" on:click|preventDefault={play}>play</button>
+	<button disabled={$connecting} class="pause" on:click|preventDefault={pause}>pause</button>
+	<button disabled={$connecting} class="menu" on:click|preventDefault={menu}>menu</button>
+	<button disabled={$connecting} class="select" on:click|preventDefault={select}>select</button>
 </div>
