@@ -1,50 +1,11 @@
-"""Simple web client implemented in pyatv tutorial.
-
-This example is implemented here:
-
-https://pyatv.dev/documentation/tutorial/
-
-Comments has been added here to make linters happy.
-"""
 import asyncio
 import json
 from aiohttp import WSMsgType, web
-from collections.abc import Mapping
-from pyatv.const import Protocol
-from pyatv import pair, scan
-
+from server.handlers import scan, pair
+from server.headers import cors_headers
 import pyatv
 
-PAGE = ""
 routes = web.RouteTableDef()
-
-
-class CorsHeaders(Mapping):
-    def __init__(self):
-        self.headers = {}
-
-    def __getitem__(self, key):
-        return self.headers[key]
-
-    def __iter__(self):
-        return iter(self.headers)
-
-    def __len__(self):
-        return len(self.headers)
-
-    def __setitem__(self, key, value):
-        # Implement any custom logic if needed
-        self.headers[key] = value
-
-    def __delitem__(self, key):
-        del self.headers[key]
-
-
-cors_headers = CorsHeaders()
-cors_headers["Access-Control-Allow-Origin"] = "*"
-cors_headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-cors_headers["Access-Control-Allow-Headers"] = "Content-Type"
-cors_headers["Access-Control-Max-Age"] = "3600"
 
 
 class DeviceListener(pyatv.interface.DeviceListener, pyatv.interface.PushListener):
@@ -111,47 +72,19 @@ def add_credentials(config, query):
             config.set_credentials(service.protocol, query[proto_name])
 
 
-@routes.get("/devices.json")
+@routes.get("/devices")
 async def devices(request):
     """Handle request to scan for devices."""
-    results = await scan(loop=asyncio.get_event_loop())
-    devices = []
-    for result in results:
-        devices.append({"name": result.name, "identifier": result.identifier})
-    return web.Response(
-        text=json.dumps(devices), content_type="application/json", headers=cors_headers
-    )
+    return await scan.handler(request)
 
 
-@routes.get("/pair/{id}")
+@routes.get("/devices/{id}/pair/{protocol}")
 async def pair_device(request):
     """Handle request to pair with a device."""
-    device_id = request.match_info["id"]
-
-    try:
-        loop = asyncio.get_event_loop()
-        atvs = await scan(loop=asyncio.get_event_loop())
-        devices = [
-            foundAtv for foundAtv in atvs if foundAtv.identifier == device_id]
-
-        request.app.current_pairing = await pair(devices[0], Protocol.Companion, loop, name="Android")
-        await request.app.current_pairing.begin()
-        return web.Response(
-            text=json_text(f"{request.app.current_pairing}"),
-            content_type="application/json",
-            headers=cors_headers,
-        )
-    except Exception as ex:
-        print(ex)
-        return web.Response(
-            text=json_error(f"Failed to start pairing because: {ex}"),
-            content_type="application/json",
-            status=500,
-            headers=cors_headers,
-        )
+    return await pair.handler(request)
 
 
-@routes.get("/pair/{id}/{pin}")
+@routes.get("/devices/{id}/pair/{protocol}/{pin}")
 @web_command
 async def send_pin(request, atv):
     """Handle request to pair with a device."""
@@ -191,7 +124,7 @@ async def send_pin(request, atv):
         )
 
 
-@routes.get("/connect/{id}")
+@routes.get("/devices/{id}/connect")
 async def connect(request):
     """Handle request to connect to a device."""
     loop = asyncio.get_event_loop()
@@ -244,11 +177,7 @@ async def connect(request):
 async def remote_control(request, atv):
     """Handle remote control command request."""
     try:
-        device_id = request.match_info["id"]
-        atvs = await scan(loop=asyncio.get_event_loop())
-        devices = [
-            foundAtv for foundAtv in atvs if foundAtv.identifier == device_id]
-        await getattr(devices[0].remote_control, request.match_info["command"])()
+        await getattr(atv.remote_control, request.match_info["command"])()
     except Exception as ex:
         print(f"ERR {ex}")
         return web.Response(
@@ -321,6 +250,7 @@ def main():
     app["atv"] = {}
     app["listeners"] = []
     app["clients"] = {}
+    app["CORS"] = cors_headers
     app.add_routes(routes)
     app.on_shutdown.append(on_shutdown)
     web.run_app(app)

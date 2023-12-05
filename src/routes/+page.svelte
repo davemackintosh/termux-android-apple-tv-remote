@@ -31,12 +31,16 @@
 	}
 
 	$: availableDevices = devices.length ? devices : [];
+	console.log(availableDevices)
 </script>
 
 <div class="main-menu">
 	{#each availableDevices as device}
 		<div class="device-row">
-			<p><strong>{device.name}</strong></p>
+			<p><a href="/device/{device.identifier}/remote"><strong>{device.name}</strong></a></p>
+			{#each device.services as service}
+				<p><em>{service.name}</em></p>
+			{/each}
 			<button on:click={() => initiatePair(device)}>Pair/Connect</button>
 		</div>
 	{/each}
